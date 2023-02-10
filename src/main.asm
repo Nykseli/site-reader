@@ -1,6 +1,7 @@
 
 %include "src/linux-x86_64.asm"
 %include "src/syscall-macro.asm"
+%include "src/string.asm"
 
 ; --------------------- DATA START ----------------------
 section .data
@@ -14,6 +15,9 @@ section .data
     ; the last newline for the end of the message, len 2
     httpmsg_end db 13, 10 ; (\r\n)
 
+    ; http header stops with "\r\n\r\n"
+    http_header_end db 13, 10, 13, 10 ; (\r\n\r\n)
+
     ; define null ternimated new line character for printing
     new_line db 10, 0
 
@@ -22,10 +26,7 @@ section .data
 
     ; struct sockaddr_in
     ; ipv4 struct constructed with helper socketaddr.c because dns is too much work
-    socketaddr db 0x02, 0x00, 0x23, 0x82, 0x7f, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-
-    ;delay for sleep macro
-    tv_delay dq 10, 500000000 ; x,y seconds
+    socketaddr db 0x02, 0x00, 0x00, 0x50, 0x1f, 0xd9, 0xc4, 0xd3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 
     ; debug message
     hello_user db "Hello user",10,0
@@ -42,6 +43,8 @@ section .bss
 
     ; pointer to the current address in client buff
     buf_ptr resq 1
+    ; lenght of client buffer
+    client_len resq 1
     ; store 32kib buffer for reading data from the server
     client_buffer resb 32768
 ; --------------------- BSS END ------------------------
@@ -50,7 +53,6 @@ section .bss
 section .text
     global _start
 ; --------------------- TEXT END ------------------------
-
 
 
 _start:
@@ -102,11 +104,30 @@ read_loop:
     cmp DWORD [ret_val], 0
     jl fail_program
 
+read_end:
     ; Close our socket
     close [socketfd]
 
+    ; save the lenght of client buffer
+    ; strlen client_buffer
+    ; mov [client_len], rax
+
+    ; set buffer back to start
+    mov QWORD [buf_ptr], client_buffer
+
+; Start finding header
+header_end_loop:
+    strncmp [buf_ptr], http_header_end, 4, 4
+    cmp rax, 1
+    je print_body
+    add QWORD [buf_ptr], 1
+    jmp header_end_loop
+
+print_body:
+    ; Don't print thee header ending
+    add QWORD [buf_ptr], 4
     ; Print the result
-    print client_buffer
+    print [buf_ptr]
 
     exit 0
 
